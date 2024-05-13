@@ -323,6 +323,7 @@ public class BTreeFile implements DbFile {
 		BTreeInternalPage leftSibling = page;
 		BTreeInternalPage rightSibling = (BTreeInternalPage) this.getEmptyPage(tid, dirtypages, BTreePageId.INTERNAL);
 
+		// transfer entries over
 		int numToTransfer = (leftSibling.getNumEntries() - 1) / 2;
 		Iterator<BTreeEntry> entriesIter = leftSibling.reverseIterator();
 		for (int i = 0; i < numToTransfer; ++i) {
@@ -332,6 +333,18 @@ public class BTreeFile implements DbFile {
 			leftSibling.deleteKeyAndRightChild(entryToTransfer);
 			rightSibling.insertEntry(entryToTransfer);
 		}
+
+		// update the children whose entries have been moved so that they point
+        // to the right parent
+        for (int i = 0; i < rightSibling.getNumEntries() + 1; ++i) {
+            BTreePage childToUpdate = (BTreePage) this.getPage(
+                tid,
+                dirtypages,
+                rightSibling.getChildId(i),
+                Permissions.READ_WRITE
+            );
+            childToUpdate.setParentId(rightSibling.getId());
+        }
 
 		// push the middle entry up to the parent
 		assert entriesIter.hasNext();
@@ -346,7 +359,7 @@ public class BTreeFile implements DbFile {
 		rightSibling.setParentId(parent.getId());
 		parent.insertEntry(middleEntry);
 
-		// return the page into which the new tuple should go
+		// return the page into which the new entry should go
 		if (field.compare(Op.LESS_THAN, middleEntry.getKey())) {
 			return leftSibling;
 		} else {
