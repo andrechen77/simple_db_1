@@ -2,7 +2,6 @@ package simpledb;
 
 import java.io.*;
 import java.util.*;
-
 import simpledb.Predicate.Op;
 
 /**
@@ -148,6 +147,7 @@ public class BTreeFile implements DbFile {
 
 	/**
 	 * Returns the number of pages in this BTreeFile.
+     * @return 
 	 */
 	public int numPages() {
 		// we only ever write full pages
@@ -160,6 +160,7 @@ public class BTreeFile implements DbFile {
 	public int keyField() {
 		return keyField;
 	}
+
 
 	/**
 	 * Recursive function which finds and locks the leaf page in the B+ tree corresponding to
@@ -180,7 +181,28 @@ public class BTreeFile implements DbFile {
 	private BTreeLeafPage findLeafPage(TransactionId tid, HashMap<PageId, Page> dirtypages, BTreePageId pid, Permissions perm,
 									   Field f)
 			throws DbException, TransactionAbortedException {
-		 return null;
+		
+		if (pid.pgcateg() == BTreePageId.LEAF) {
+			return (BTreeLeafPage) this.getPage(tid, dirtypages, pid, perm);
+		}
+		BTreeInternalPage currentPage = (BTreeInternalPage) getPage(tid, dirtypages, pid, Permissions.READ_ONLY);
+		Iterator<BTreeEntry> entryIt = currentPage.iterator();
+
+		BTreeEntry nextEntry = null;
+		while (entryIt.hasNext()) {
+			nextEntry = entryIt.next();
+			if (f == null || nextEntry.getKey().compare(Op.GREATER_THAN_OR_EQ, f)) {
+				return findLeafPage(tid, dirtypages, nextEntry.getLeftChild(), perm, f);
+			}
+		}
+		//
+		// nextEntry is only null if the iterator for the currentPage is empty
+		//
+		if (nextEntry == null) {
+			// TODO throw exception
+			return null;
+		}
+		return findLeafPage(tid, dirtypages, nextEntry.getRightChild(), perm, f);
 	}
 
 	/**
