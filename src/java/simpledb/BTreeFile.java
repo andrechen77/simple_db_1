@@ -744,28 +744,35 @@ public class BTreeFile implements DbFile {
 	 * @throws IOException
 	 * @throws TransactionAbortedException
 	 */
-	protected void stealFromLeftInternalPage(TransactionId tid, HashMap<PageId, Page> dirtypages,
-											 BTreeInternalPage page, BTreeInternalPage leftSibling, BTreeInternalPage parent,
-											 BTreeEntry parentEntry) throws DbException, IOException, TransactionAbortedException {
-		// Move some of the entries from the left sibling to the page so
-		// that the entries are evenly distributed. Be sure to update
-		// the corresponding parent entry. Be sure to update the parent
-		// pointers of all children in the entries that were moved.
+	protected void stealFromLeftInternalPage(
+		TransactionId tid,
+		HashMap<PageId, Page> dirtypages,
+		BTreeInternalPage page,
+		BTreeInternalPage leftSibling,
+		BTreeInternalPage parent,
+		BTreeEntry parentEntry
+	) throws DbException, IOException, TransactionAbortedException {
 		Iterator<BTreeEntry> entryIt = leftSibling.reverseIterator();
-		BTreeEntry nextEntry;
 		while (page.getNumEntries() < leftSibling.getNumEntries()) {
 			assert entryIt.hasNext();
-			nextEntry = entryIt.next();
-			page.insertEntry(
-				new BTreeEntry(
-					parentEntry.getKey(),
-					nextEntry.getRightChild(),
-					page.getChildId(0)
-				)
-			);
-			parentEntry.setKey(nextEntry.getKey());
-			leftSibling.deleteKeyAndRightChild(nextEntry);
+			BTreeEntry entryToMove = entryIt.next();
+
+			BTreePageId movedChildId = entryToMove.getRightChild();
+			BTreePage movedChild = (BTreePage) this.getPage(tid, dirtypages, movedChildId, Permissions.READ_WRITE);
+
+			// rotate keys
+			page.insertEntry(new BTreeEntry(
+				parentEntry.getKey(),
+				movedChildId, // bc of rotation, left child becomes right child
+				page.getChildId(0)
+			));
+			leftSibling.deleteKeyAndRightChild(entryToMove);
+			parentEntry.setKey(entryToMove.getKey());
+
+			// update moved child's parent
+			movedChild.setParentId(page.getId());
 		}
+		parent.updateEntry(parentEntry);
 	}
 
 	/**
@@ -786,28 +793,36 @@ public class BTreeFile implements DbFile {
 	 * @throws IOException
 	 * @throws TransactionAbortedException
 	 */
-	protected void stealFromRightInternalPage(TransactionId tid, HashMap<PageId, Page> dirtypages,
-											  BTreeInternalPage page, BTreeInternalPage rightSibling, BTreeInternalPage parent,
-											  BTreeEntry parentEntry) throws DbException, IOException, TransactionAbortedException {
-		// Move some of the entries from the right sibling to the page so
-		// that the entries are evenly distributed. Be sure to update
-		// the corresponding parent entry. Be sure to update the parent
-		// pointers of all children in the entries that were moved.
+	protected void stealFromRightInternalPage(
+		TransactionId tid,
+		HashMap<PageId, Page> dirtypages,
+		BTreeInternalPage page,
+		BTreeInternalPage rightSibling,
+		BTreeInternalPage parent,
+		BTreeEntry parentEntry
+	) throws DbException, IOException, TransactionAbortedException {
+
 		Iterator<BTreeEntry> entryIt = rightSibling.iterator();
-		BTreeEntry nextEntry;
 		while (page.getNumEntries() < rightSibling.getNumEntries()) {
 			assert entryIt.hasNext();
-			nextEntry = entryIt.next();
-			page.insertEntry(
-				new BTreeEntry(
-					parentEntry.getKey(),
-					page.getChildId(page.getNumEntries() - 1),
-					nextEntry.getLeftChild()
-				)
-			);
-			parentEntry.setKey(nextEntry.getKey());
-			rightSibling.deleteKeyAndLeftChild(nextEntry);
+			BTreeEntry entryToMove = entryIt.next();
+
+			BTreePageId movedChildId = entryToMove.getLeftChild();
+			BTreePage movedChild = (BTreePage) this.getPage(tid, dirtypages, movedChildId, Permissions.READ_WRITE);
+
+			// rotate keys
+			page.insertEntry(new BTreeEntry(
+				parentEntry.getKey(),
+				page.getChildId(page.getNumEntries()), // bc of rotation, right child becomes left child
+				movedChildId
+			));
+			rightSibling.deleteKeyAndRightChild(entryToMove);
+			parentEntry.setKey(entryToMove.getKey());
+
+			// update moved child's parent
+			movedChild.setParentId(page.getId());
 		}
+		parent.updateEntry(parentEntry);
 	}
 
 
