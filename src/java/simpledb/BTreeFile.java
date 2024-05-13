@@ -147,7 +147,7 @@ public class BTreeFile implements DbFile {
 
 	/**
 	 * Returns the number of pages in this BTreeFile.
-     * @return 
+     * @return
 	 */
 	public int numPages() {
 		// we only ever write full pages
@@ -181,10 +181,12 @@ public class BTreeFile implements DbFile {
 	private BTreeLeafPage findLeafPage(TransactionId tid, HashMap<PageId, Page> dirtypages, BTreePageId pid, Permissions perm,
 									   Field f)
 			throws DbException, TransactionAbortedException {
-		
+
 		if (pid.pgcateg() == BTreePageId.LEAF) {
 			return (BTreeLeafPage) this.getPage(tid, dirtypages, pid, perm);
 		}
+
+		// assume that if the page is not a leaf, it is internal
 		BTreeInternalPage currentPage = (BTreeInternalPage) getPage(tid, dirtypages, pid, Permissions.READ_ONLY);
 		Iterator<BTreeEntry> entryIt = currentPage.iterator();
 
@@ -195,12 +197,10 @@ public class BTreeFile implements DbFile {
 				return findLeafPage(tid, dirtypages, nextEntry.getLeftChild(), perm, f);
 			}
 		}
-		//
+
 		// nextEntry is only null if the iterator for the currentPage is empty
-		//
 		if (nextEntry == null) {
-			// TODO throw exception
-			return null;
+			throw new DbException("B+ tree internal page has no keys");
 		}
 		return findLeafPage(tid, dirtypages, nextEntry.getRightChild(), perm, f);
 	}
