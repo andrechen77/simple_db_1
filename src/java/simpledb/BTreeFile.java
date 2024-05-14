@@ -844,32 +844,39 @@ public class BTreeFile implements DbFile {
 	 * @throws IOException
 	 * @throws TransactionAbortedException
 	 */
-	protected void mergeLeafPages(TransactionId tid, HashMap<PageId, Page> dirtypages,
-								  BTreeLeafPage leftPage, BTreeLeafPage rightPage, BTreeInternalPage parent, BTreeEntry parentEntry)
-			throws DbException, IOException, TransactionAbortedException {
+	protected void mergeLeafPages(
+		TransactionId tid,
+		HashMap<PageId, Page> dirtypages,
+		BTreeLeafPage leftPage,
+		BTreeLeafPage rightPage,
+		BTreeInternalPage parent,
+		BTreeEntry parentEntry
+	) throws DbException, IOException, TransactionAbortedException {
 		//
 		// Move all the tuples from the right page to the left page, update
 		// the sibling pointers, and make the right page available for reuse.
 		// Delete the entry in the parent corresponding to the two pages that are merging -
 		// deleteParentEntry() will be useful here
-		
+
 		// move right sibling entries to left sibling
 		Iterator<Tuple> rightpageIt = rightPage.iterator();
-		while (rightPage.getNumTuples() > 0) { 
+		while (rightPage.getNumTuples() > 0) {
 			Tuple nextTuple = rightpageIt.next();
 			rightPage.deleteTuple(nextTuple);
 			leftPage.insertTuple(nextTuple);
 		}
 		assert !rightpageIt.hasNext();
-		
-		// delete parent pointer and update sibling pointers
-		this.deleteParentEntry(tid, dirtypages, rightPage, parent, parentEntry);
+
+		// delete parent entry and update sibling pointers
+		this.deleteParentEntry(tid, dirtypages, leftPage, parent, parentEntry);
 		BTreePageId righterPageId = rightPage.getRightSiblingId();
 		if (righterPageId != null) {
 			BTreeLeafPage righterSibling = (BTreeLeafPage) this.getPage(tid, dirtypages, righterPageId, Permissions.READ_WRITE);
 			righterSibling.setLeftSiblingId(leftPage.getId());
 		}
 		leftPage.setRightSiblingId(righterPageId);
+
+		// mark the right page for reuse
 		this.setEmptyPage(tid, dirtypages, rightPage.getId().getPageNumber());
 	}
 
@@ -893,33 +900,42 @@ public class BTreeFile implements DbFile {
 	 * @throws IOException
 	 * @throws TransactionAbortedException
 	 */
-	protected void mergeInternalPages(TransactionId tid, HashMap<PageId, Page> dirtypages,
-									  BTreeInternalPage leftPage, BTreeInternalPage rightPage, BTreeInternalPage parent, BTreeEntry parentEntry)
-			throws DbException, IOException, TransactionAbortedException {
-
+	protected void mergeInternalPages(
+		TransactionId tid,
+		HashMap<PageId, Page> dirtypages,
+		BTreeInternalPage leftPage,
+		BTreeInternalPage rightPage,
+		BTreeInternalPage parent,
+		BTreeEntry parentEntry
+	) throws DbException, IOException, TransactionAbortedException {
 		// move parent entry
+		this.deleteParentEntry(tid, dirtypages, leftPage, parent, parentEntry);
 		leftPage.insertEntry(new BTreeEntry(
 			parentEntry.getKey(),
-			leftPage.getChildId(leftPage.getNumEntries()), 
+			leftPage.getChildId(leftPage.getNumEntries()),
 			rightPage.getChildId(0)
 		));
-		
-		this.deleteParentEntry(tid, dirtypages, rightPage, parent, parentEntry);
-		
+
 		// move right page entries
 		Iterator<BTreeEntry> entryIt = rightPage.iterator();
-		while (rightPage.getNumEntries() > 0) { 
-			BTreeEntry nextEntry = entryIt.next();
+		BTreeEntry entryToMove;
+		do {
+			entryToMove = entryIt.next();
 
-			BTreePageId movedChildId = nextEntry.getLeftChild();
+			BTreePageId movedChildId = entryToMove.getLeftChild();
 			BTreePage movedChild = (BTreePage) this.getPage(tid, dirtypages, movedChildId, Permissions.READ_WRITE);
 			movedChild.setParentId(leftPage.getId());
 
-			rightPage.deleteKeyAndLeftChild(nextEntry);
-			leftPage.insertEntry(nextEntry);
-		}
+			rightPage.deleteKeyAndLeftChild(entryToMove);
+			leftPage.insertEntry(entryToMove);
+		} while (rightPage.getNumEntries() > 0);
+		// don't forget to update the last child's parent pointer
+		BTreePageId lastChildId = entryToMove.getRightChild();
+		BTreePage lastChild = (BTreePage) this.getPage(tid, dirtypages, lastChildId, Permissions.READ_WRITE);
+		lastChild.setParentId(leftPage.getId());
 		assert !entryIt.hasNext();
 
+		// mark the right page for reuse
 		this.setEmptyPage(tid, dirtypages, rightPage.getId().getPageNumber());
 	}
 
