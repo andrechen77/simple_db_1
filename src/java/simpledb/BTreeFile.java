@@ -198,10 +198,7 @@ public class BTreeFile implements DbFile {
 			}
 		}
 
-		// nextEntry is only null if the iterator for the currentPage is empty
-		if (nextEntry == null) {
-			throw new DbException("B+ tree internal page has no keys");
-		}
+		assert nextEntry != null;
 		return findLeafPage(tid, dirtypages, nextEntry.getRightChild(), perm, f);
 	}
 
