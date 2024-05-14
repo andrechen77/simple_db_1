@@ -326,25 +326,32 @@ public class BTreeFile implements DbFile {
 		// transfer entries over
 		int numToTransfer = (leftSibling.getNumEntries() - 1) / 2;
 		Iterator<BTreeEntry> entriesIter = leftSibling.reverseIterator();
+		BTreeEntry entryToTransfer = null;
 		for (int i = 0; i < numToTransfer; ++i) {
 			assert entriesIter.hasNext();
-			BTreeEntry entryToTransfer = entriesIter.next();
+			entryToTransfer = entriesIter.next();
 
 			leftSibling.deleteKeyAndRightChild(entryToTransfer);
 			rightSibling.insertEntry(entryToTransfer);
-		}
 
-		// update the children whose entries have been moved so that they point
-        // to the right parent
-        for (int i = 0; i < rightSibling.getNumEntries() + 1; ++i) {
-            BTreePage childToUpdate = (BTreePage) this.getPage(
+			// update the child's parent pointer
+			BTreePage childToUpdate = (BTreePage) this.getPage(
                 tid,
                 dirtypages,
-                rightSibling.getChildId(i),
+                entryToTransfer.getRightChild(),
                 Permissions.READ_WRITE
             );
-            childToUpdate.setParentId(rightSibling.getId());
-        }
+			childToUpdate.setParentId(rightSibling.getId());
+		}
+		// don't forget to update the last child's parent pointer
+		assert entryToTransfer != null;
+		BTreePage childToUpdate = (BTreePage) this.getPage(
+			tid,
+			dirtypages,
+			entryToTransfer.getLeftChild(),
+			Permissions.READ_WRITE
+		);
+		childToUpdate.setParentId(rightSibling.getId());
 
 		// push the middle entry up to the parent
 		assert entriesIter.hasNext();
@@ -764,7 +771,7 @@ public class BTreeFile implements DbFile {
 			page.insertEntry(new BTreeEntry(
 				parentEntry.getKey(),
 				movedChildId, // bc of rotation, left child becomes right child
-				page.getChildId(0)
+				page.iterator().next().getLeftChild()
 			));
 			leftSibling.deleteKeyAndRightChild(entryToMove);
 			parentEntry.setKey(entryToMove.getKey());
@@ -813,7 +820,7 @@ public class BTreeFile implements DbFile {
 			// rotate keys
 			page.insertEntry(new BTreeEntry(
 				parentEntry.getKey(),
-				page.getChildId(page.getNumEntries()), // bc of rotation, right child becomes left child
+				page.reverseIterator().next().getRightChild(), // bc of rotation, right child becomes left child
 				movedChildId
 			));
 			rightSibling.deleteKeyAndLeftChild(entryToMove);
@@ -912,8 +919,8 @@ public class BTreeFile implements DbFile {
 		this.deleteParentEntry(tid, dirtypages, leftPage, parent, parentEntry);
 		leftPage.insertEntry(new BTreeEntry(
 			parentEntry.getKey(),
-			leftPage.getChildId(leftPage.getNumEntries()),
-			rightPage.getChildId(0)
+			leftPage.reverseIterator().next().getRightChild(),
+			rightPage.iterator().next().getLeftChild()
 		));
 
 		// move right page entries
